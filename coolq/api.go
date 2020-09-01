@@ -1,11 +1,14 @@
 package coolq
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"io/ioutil"
 	"os"
 	"path"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Mrs4s/MiraiGo/binary"
@@ -629,4 +632,45 @@ func convertGroupMemberInfo(groupId int64, m *client.GroupMemberInfo) MSG {
 		"title_expire_time": m.SpecialTitleExpireTime,
 		"card_changeable":   false,
 	}
+}
+
+//CQSendGroupNewImgMsg
+func (bot *CQBot) CQSendGroupNewImgMsg(groupId int64, i interface{}) MSG {
+	var str string
+	s := i.(string)
+	str = s
+	if str == "" {
+		log.Warnf("群消息发送失败: 信息为空. MSG: %v", i)
+		return Failed(100)
+	}
+	elem := bot.getPic(str)
+	mid := bot.SendGroupNewPic(groupId, &message.SendingMessage{Elements: elem})
+	if mid == -1 {
+		return Failed(100)
+	}
+	return OK(MSG{"message_id": mid})
+}
+
+func (bot *CQBot) getPic(url string) []message.IMessageElement {
+	var elem []message.IMessageElement
+	if strings.HasPrefix(url, "http") || strings.HasPrefix(url, "https") {
+		hash := md5.Sum([]byte(url))
+		cacheFile := path.Join(global.CACHE_PATH, hex.EncodeToString(hash[:])+".cache")
+		if global.PathExists(cacheFile) {
+			b, err := ioutil.ReadFile(cacheFile)
+			if err == nil {
+				elem = append(elem, message.NewImage(b))
+				return elem
+			}
+		}
+		b, err := global.GetBytes(url)
+		if err != nil {
+			return nil
+		}
+		_ = ioutil.WriteFile(cacheFile, b, 0644)
+		elem = append(elem, message.NewImage(b))
+	} else {
+		elem = bot.ConvertStringMessage(url, true)
+	}
+	return elem
 }

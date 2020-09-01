@@ -100,6 +100,7 @@ func (s *httpServer) Run(addr, authToken string, bot *coolq.CQBot) {
 
 	s.engine.Any("/send_group_msg", s.SendGroupMessage)
 	s.engine.Any("/send_group_msg_async", s.SendGroupMessage)
+	s.engine.Any("/send_group_new_img_msg", s.SendGroupNewImgMsg)
 
 	s.engine.Any("/send_group_forward_msg", s.SendGroupForwardMessage)
 	s.engine.Any("/send_group_forward_msg_async", s.SendGroupForwardMessage)
@@ -438,4 +439,14 @@ func getParamWithType(c *gin.Context, k string) (string, gjson.Type) {
 		}
 	}
 	return "", gjson.Null
+}
+
+func (s *httpServer) SendGroupNewImgMsg(c *gin.Context) {
+	gid, _ := strconv.ParseInt(getParam(c, "group_id"), 10, 64)
+	msg, t := getParamWithType(c, "url")
+	if t == gjson.JSON {
+		c.JSON(200, s.bot.CQSendGroupNewImgMsg(gid, gjson.Parse(msg)))
+		return
+	}
+	c.JSON(200, s.bot.CQSendGroupNewImgMsg(gid, msg))
 }

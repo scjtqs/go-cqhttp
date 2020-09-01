@@ -3,7 +3,7 @@ module github.com/Mrs4s/go-cqhttp
 go 1.14
 
 require (
-	github.com/Mrs4s/MiraiGo v0.0.0-20200827182935-51e155ef20da
+	github.com/Mrs4s/MiraiGo v0.0.0-20200901081949-6328ae0e93db
 	github.com/fastly/go-utils v0.0.0-20180712184237-d95a45783239 // indirect
 	github.com/gin-gonic/gin v1.6.3
 	github.com/gorilla/websocket v1.4.2
@@ -24,4 +24,5 @@ require (
 	golang.org/x/sys v0.0.0-20200828194041-157a740278f4 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 )
-replace github.com/Mrs4s/MiraiGo => /Users/apple/Workspace/git/MiraiGo
+
+//replace github.com/Mrs4s/MiraiGo => /Users/apple/Workspace/git/MiraiGo

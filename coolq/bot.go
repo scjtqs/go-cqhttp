@@ -256,3 +256,30 @@ func (m MSG) ToJson() string {
 	b, _ := json.Marshal(m)
 	return string(b)
 }
+
+//SendGroupNewPic 一种xml 方式发送的群消息图片
+func (bot *CQBot) SendGroupNewPic(groupId int64, m *message.SendingMessage) int32 {
+	var newElem []message.IMessageElement
+	for _, elem := range m.Elements {
+		if i, ok := elem.(*message.ImageElement); ok {
+			gm, err := bot.Client.UploadGroupImage(groupId, i.Data)
+			if err != nil {
+				log.Warnf("警告: 群 %v 消息图片上传失败: %v", groupId, err)
+				continue
+			}
+			xml := fmt.Sprintf(`<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><msg serviceID="5" templateID="1" action="" brief="[分享] 图片" sourceMsgId="0" url="%s" flag="2" adverSign="0" multiMsgFlag="0"><item layout="0"><image uuid="%d" md5="%x" GroupFiledid="0" filesize="38504" local_path="%s" minWidth="400" minHeight="400" maxWidth="500" maxHeight="1000" /></item><source name="" icon="" action="" appid="-1" /></msg>`, "", gm.FileId, gm.Md5, "")
+			log.Warn(xml)
+			XmlMsg := message.NewXmlMsg(xml, 5)
+			newElem = append(newElem, XmlMsg)
+			continue
+		}
+		newElem = append(newElem, elem)
+	}
+	m.Elements = newElem
+	ret := bot.Client.SendGroupMessage(groupId, m, ForceFragmented)
+	if ret == nil || ret.Id == -1 {
+		log.Warnf("群消息发送失败: 账号可能被风控.")
+		return -1
+	}
+	return bot.InsertGroupMessage(ret)
+}
