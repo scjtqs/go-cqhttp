@@ -32,10 +32,26 @@ func ToArrayMessage(e []message.IMessageElement, code int64, raw ...bool) (r []M
 	if len(raw) != 0 {
 		ur = raw[0]
 	}
+	m := &message.SendingMessage{Elements: e}
+	reply := m.FirstOrNil(func(e message.IMessageElement) bool {
+		_, ok := e.(*message.ReplyElement)
+		return ok
+	})
+	if reply != nil {
+		r = append(r, MSG{
+			"type": "reply",
+			"data": map[string]string{"id": fmt.Sprint(ToGlobalId(code, reply.(*message.ReplyElement).ReplySeq))},
+		})
+	}
 	for _, elem := range e {
 		m := MSG{}
 		switch o := elem.(type) {
 		case *message.TextElement:
+			m = MSG{
+				"type": "text",
+				"data": map[string]string{"text": o.Content},
+			}
+		case *message.LightAppElement:
 			m = MSG{
 				"type": "text",
 				"data": map[string]string{"text": o.Content},
@@ -51,11 +67,6 @@ func ToArrayMessage(e []message.IMessageElement, code int64, raw ...bool) (r []M
 					"type": "at",
 					"data": map[string]string{"qq": fmt.Sprint(o.Target)},
 				}
-			}
-		case *message.ReplyElement:
-			m = MSG{
-				"type": "reply",
-				"data": map[string]string{"id": fmt.Sprint(ToGlobalId(code, o.ReplySeq))},
 			}
 		case *message.ForwardElement:
 			m = MSG{
@@ -155,6 +166,8 @@ func ToStringMessage(e []message.IMessageElement, code int64, raw ...bool) (r st
 			} else {
 				r += fmt.Sprintf(`[CQ:image,file=%s,url=%s]`, o.Filename, CQCodeEscapeValue(o.Url))
 			}
+		case *message.LightAppElement:
+			r += CQCodeEscapeText(o.Content)
 		}
 	}
 	return
@@ -454,17 +467,22 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 				return nil, errors.New("song not found")
 			}
 			aid := strconv.FormatInt(info.Get("track_info.album.id").Int(), 10)
-			name := info.Get("track_info.name").Str
+			name := info.Get("track_info.name").Str + " - " + info.Get("track_info.singer.0.name").Str
+			mid := info.Get("track_info.mid").Str
+			albumMid := info.Get("track_info.album.mid").Str
+			pinfo, _ := global.GetBytes("http://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=2034008533&uin=0&format=json&data={\"comm\":{\"ct\":23,\"cv\":0},\"url_mid\":{\"module\":\"vkey.GetVkeyServer\",\"method\":\"CgiGetVkey\",\"param\":{\"guid\":\"4311206557\",\"songmid\":[\"" + mid + "\"],\"songtype\":[0],\"uin\":\"0\",\"loginflag\":1,\"platform\":\"23\"}}}&_=1599039471576")
+			jumpUrl := "https://i.y.qq.com/v8/playsong.html?platform=11&appshare=android_qq&appversion=10030010&hosteuin=oKnlNenz7i-s7c**&songmid=" + mid + "&type=0&appsongtype=1&_wv=1&source=qq&ADTAG=qfshare"
+			purl := gjson.ParseBytes(pinfo).Get("url_mid.data.midurlinfo.0.purl").Str
+			preview := "http://y.gtimg.cn/music/photo_new/T002R180x180M000" + albumMid + ".jpg"
 			if len(aid) < 2 {
 				return nil, errors.New("song error")
 			}
-			xml := fmt.Sprintf(`<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><msg serviceID="2" templateID="1" action="web" brief="[分享] %s" sourceMsgId="0" url="https://i.y.qq.com/v8/playsong.html?_wv=1&amp;songid=%s&amp;souce=qqshare&amp;source=qqshare&amp;ADTAG=qqshare" flag="0" adverSign="0" multiMsgFlag="0"><item layout="2"><audio cover="http://imgcache.qq.com/music/photo/album_500/%s/500_albumpic_%s_0.jpg" src="%s" /><title>%s</title><summary>%s</summary></item><source name="QQ音乐" icon="https://i.gtimg.cn/open/app_icon/01/07/98/56/1101079856_100_m.png" url="http://web.p.qq.com/qqmpmobile/aio/app.html?id=1101079856" action="app" a_actionData="com.tencent.qqmusic" i_actionData="tencent1101079856://" appid="1101079856" /></msg>`,
-				name, d["id"], aid[:len(aid)-2], aid, name, "", info.Get("track_info.singer.name").Str)
-			return &message.ServiceElement{
-				Id:      60,
-				Content: xml,
-				SubType: "music",
-			}, nil
+			content := "来自go-cqhttp"
+			if d["content"] != "" {
+				content = d["content"]
+			}
+			json := fmt.Sprintf("{\"app\": \"com.tencent.structmsg\",\"desc\": \"音乐\",\"meta\": {\"music\": {\"desc\": \"%s\",\"jumpUrl\": \"%s\",\"musicUrl\": \"%s\",\"preview\": \"%s\",\"tag\": \"QQ音乐\",\"title\": \"%s\"}},\"prompt\": \"[分享]%s\",\"ver\": \"0.0.0.1\",\"view\": \"music\"}", content, jumpUrl, purl, preview, name, name)
+			return message.NewLightApp(json), nil
 		}
 		if d["type"] == "163" {
 			info, err := global.NeteaseMusicSongInfo(d["id"])
@@ -502,11 +520,19 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 		template := CQCodeEscapeValue(d["data"])
 		//println(template)
 		i, _ := strconv.ParseInt(resId, 10, 64)
-		msg := message.NewXmlMsg(template, i)
+		msg := message.NewRichXml(template, i)
 		return msg, nil
 	case "json":
+		resId := d["resid"]
+		i, _ := strconv.ParseInt(resId, 10, 64)
 		log.Warnf("json msg=%s", d["data"])
-		msg := message.NewJsonMsg(CQCodeUnescapeValue(d["data"]))
+		if i == 0 {
+			//默认情况下走小程序通道
+			msg := message.NewLightApp(CQCodeUnescapeValue(d["data"]))
+			return msg, nil
+		}
+		//resid不为0的情况下走富文本通道，后续补全透传service Id，此处暂时不处理 TODO
+		msg := message.NewRichJson(CQCodeUnescapeValue(d["data"]))
 		return msg, nil
 	default:
 		return nil, errors.New("unsupported cq code: " + t)
