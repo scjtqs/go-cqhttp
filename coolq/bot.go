@@ -272,7 +272,7 @@ func (bot *CQBot) SendGroupNewPic(groupId int64, m *message.SendingMessage) int3
 			}
 			xml := fmt.Sprintf(`<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><msg serviceID="5" templateID="1" action="" brief="[分享] 图片" sourceMsgId="0" url="%s" flag="2" adverSign="0" multiMsgFlag="0"><item layout="0"><image uuid="%d" md5="%x" GroupFiledid="0" filesize="38504" local_path="%s" minWidth="400" minHeight="400" maxWidth="500" maxHeight="1000" /></item><source name="" icon="" action="" appid="-1" /></msg>`, "", gm.FileId, gm.Md5, "")
 			log.Warn(xml)
-			XmlMsg := message.NewXmlMsg(xml, 5)
+			XmlMsg := message.NewRichXml(xml, 5)
 			newElem = append(newElem, XmlMsg)
 			continue
 		}
