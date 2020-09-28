@@ -19,7 +19,8 @@ packr2 build  -o miraigo
 	"web_ui": {
 		"enabled": true,
 		"web_ui_port": 9999,
-		"webinput": false
+		"user":"admin",
+		"password":"admin"
 	}
 ```
 
