@@ -13,6 +13,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm packr2 build  -o miraigo
 #简单点的
 packr2 build  -o miraigo
 ```
+# 相关配置
+在 config.json 中添加
+```json
+	"web_ui": {
+		"enabled": true,
+		"web_ui_port": 9999,
+		"webinput": false
+	}
+```
+
 
 # 兼容性
 
