@@ -48,6 +48,38 @@ Type: `poke`
 
 示例: `[CQ:poke,qq=123456]`
 
+### 礼物
+
+> 注意：仅支持免费礼物,发送群礼物消息无法撤回,返回的 `message id`  恒定为 `0`
+
+Type: `gift`
+
+范围: **发送(仅群聊,接收的时候不是CQ码)**
+
+参数:
+
+| 参数名  |类型     | 说明       |
+| ------ | ------ | -----------|
+| qq     | int64  | 接收礼物的成员 |
+| id     | int    | 礼物的类型  |
+
+目前支持的礼物ID:
+
+| id |类型       |
+| ---| ---------|
+| 0  | 甜Wink   | 
+| 1  | 快乐肥宅水| 
+| 2  | 幸运手链  | 
+| 3  | 卡布奇诺  | 
+| 4  | 猫咪手表  | 
+| 5  | 绒绒手套  | 
+| 6  | 彩虹糖果  | 
+| 7  | 坚强     |
+| 8  | 告白话筒  |
+
+
+示例: `[CQ:gift,qq=123456,id=8]`
+
  ### 合并转发
 
 Type: `forward`
@@ -255,6 +287,22 @@ Type: `cardimage`
 [CQ:cardimage,file=https://i.pixiv.cat/img-master/img/2020/03/25/00/00/08/80334602_p0_master1200.jpg]
 ```
 
+### 文本转语音
+
+> 注意：通过TX的TTS接口，采用的音源与登录账号的性别有关
+
+Type: `tts`
+
+范围: **发送(仅群聊)**
+
+参数:
+
+| 参数名 | 类型   | 说明        |
+| ------ | ------ | ----------- |
+| text     | string  | 内容 |
+
+示例: `[CQ:tts,text=这是一条测试消息]`
+
 ## API
 
 ### 设置群名
@@ -267,6 +315,28 @@ Type: `cardimage`
 | -------- | ------ | ---- |
 | group_id | int64  | 群号 |
 | group_name     | string | 新名 |
+
+### 设置群头像
+
+终结点: `/set_group_portrait`  
+
+**参数** 
+
+| 字段     | 类型   | 说明 |
+| -------- | ------ | ---- |
+| group_id | int64  | 群号 |
+| file     | string | 图片文件名 |
+| cache |  int | 表示是否使用已缓存的文件 |
+
+[1]`file` 参数支持以下几种格式：
+
+- 绝对路径，例如 `file:///C:\\Users\Richard\Pictures\1.png`，格式使用 [`file` URI](https://tools.ietf.org/html/rfc8089)
+- 网络 URL，例如 `http://i1.piimg.com/567571/fdd6e7b6d93f1ef0.jpg`
+- Base64 编码，例如 `base64://iVBORw0KGgoAAAANSUhEUgAAABQAAAAVCAIAAADJt1n/AAAAKElEQVQ4EWPk5+RmIBcwkasRpG9UM4mhNxpgowFGMARGEwnBIEJVAAAdBgBNAZf+QAAAAABJRU5ErkJggg==`
+
+[2]`cache`参数: 通过网络 URL 发送时有效，`1`表示使用缓存，`0`关闭关闭缓存，默认 为`1`
+
+[3] 目前这个API在登录一段时间后因cookie失效而失效，请考虑后使用
 
 ### 获取图片信息
 
@@ -364,7 +434,21 @@ Type: `cardimage`
 | `group_id` | int64          | 群号                         |
 | `messages` | forward node[] | 自定义转发消息, 具体看CQCode |
 
-### 
+### 获取中文分词
+
+终结点: `/.get_word_slices`  
+
+**参数** 
+
+| 字段         | 类型   | 说明   |
+| ------------ | ------ | ------ |
+| `content` | string | 内容 |
+
+**响应数据**
+
+| 字段       | 类型              | 说明     |
+| ---------- | ----------------- | -------- |
+| `slices` |      string[]       | 词组 |
 
 ## 事件
 
