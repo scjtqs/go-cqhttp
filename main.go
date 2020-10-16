@@ -236,6 +236,7 @@ func main() {
 	if conf.WebUi == nil {
 		conf.WebUi = &global.GoCqWebUi{
 			Enabled:   true,
+			Host:      "0.0.0.0",
 			User:      "admin",
 			Password:  "admin",
 			WebUiPort: 9999,
@@ -244,11 +245,14 @@ func main() {
 	if conf.WebUi.WebUiPort <= 0 {
 		conf.WebUi.WebUiPort = 9999
 	}
+	if conf.WebUi.Host == "" {
+		conf.WebUi.Host = "0.0.0.0"
+	}
 	confErr := conf.Save("config.json")
 	if confErr != nil {
 		log.Error("保存配置文件失败")
 	}
-	b := web.WebServer.Run(fmt.Sprintf("%s:%d", "0.0.0.0", conf.WebUi.WebUiPort), cli)
+	b := web.WebServer.Run(fmt.Sprintf("%s:%d", conf.WebUi.Host, conf.WebUi.WebUiPort), cli)
 	c := web.Console
 	signal.Notify(c, os.Interrupt, os.Kill)
 	<-c

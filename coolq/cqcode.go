@@ -35,8 +35,28 @@ type GiftElement struct {
 	GiftId message.GroupGift
 }
 
+type MusicElement struct {
+	Title      string
+	Summary    string
+	Url        string
+	PictureUrl string
+	MusicUrl   string
+}
+
+type QQMusicElement struct {
+	MusicElement
+}
+
+type CloudMusicElement struct {
+	MusicElement
+}
+
 func (e *GiftElement) Type() message.ElementType {
 	return message.At
+}
+
+func (e *MusicElement) Type() message.ElementType {
+	return message.Service
 }
 
 var GiftId = []message.GroupGift{
@@ -342,12 +362,48 @@ func (bot *CQBot) ConvertObjectMessage(m gjson.Result, group bool) (r []message.
 	return
 }
 
-func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.IMessageElement, error) {
+func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (m message.IMessageElement, err error) {
 	switch t {
 	case "text":
 		return message.NewText(d["text"]), nil
 	case "image":
-		return bot.makeImageElem(t, d, group)
+		img, err := bot.makeImageElem(d, group)
+		if err != nil {
+			return nil, err
+		}
+		tp := d["type"]
+		if tp != "show" && tp != "flash" {
+			return img, nil
+		}
+		if i, ok := img.(*message.ImageElement); ok { // 秀图，闪照什么的就直接传了吧
+			if group {
+				img, err = bot.Client.UploadGroupImage(1, i.Data)
+			} else {
+				img, err = bot.Client.UploadPrivateImage(1, i.Data)
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		switch tp {
+		case "flash":
+			if i, ok := img.(*message.GroupImageElement); ok {
+				return &message.GroupFlashPicElement{GroupImageElement: *i}, nil
+			}
+			if i, ok := img.(*message.FriendImageElement); ok {
+				return &message.FriendFlashPicElement{FriendImageElement: *i}, nil
+			}
+		case "show":
+			id, _ := strconv.ParseInt(d["id"], 10, 64)
+			if id < 40000 || id >= 40006 {
+				id = 40000
+			}
+			if i, ok := img.(*message.GroupImageElement); ok {
+				return &message.GroupShowPicElement{GroupImageElement: *i, EffectId: int32(id)}, nil
+			}
+			return img, nil // 私聊还没做
+		}
+
 	case "poke":
 		if !group {
 			return nil, errors.New("todo") // TODO: private poke
@@ -368,7 +424,14 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 		if !group {
 			return nil, errors.New("private voice unsupported now")
 		}
+		defer func() {
+			if r := recover(); r != nil {
+				m = nil
+				err = errors.New("tts 转换失败")
+			}
+		}()
 		data, err := bot.Client.GetTts(d["text"])
+		ioutil.WriteFile("tts.silk", data, 777)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +446,10 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 			return nil, err
 		}
 		if !global.IsAMRorSILK(data) {
-			return nil, errors.New("unsupported voice file format (please use AMR file for now)")
+			data, err = global.Encoder(data)
+			if err != nil {
+				return nil, err
+			}
 		}
 		return &message.VoiceElement{Data: data}, nil
 	case "face":
@@ -425,8 +491,13 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 			if d["content"] != "" {
 				content = d["content"]
 			}
-			json := fmt.Sprintf("{\"app\": \"com.tencent.structmsg\",\"desc\": \"音乐\",\"meta\": {\"music\": {\"desc\": \"%s\",\"jumpUrl\": \"%s\",\"musicUrl\": \"%s\",\"preview\": \"%s\",\"tag\": \"QQ音乐\",\"title\": \"%s\"}},\"prompt\": \"[分享]%s\",\"ver\": \"0.0.0.1\",\"view\": \"music\"}", content, jumpUrl, purl, preview, name, name)
-			return message.NewLightApp(json), nil
+			return &QQMusicElement{MusicElement: MusicElement{
+				Title:      name,
+				Summary:    content,
+				Url:        jumpUrl,
+				PictureUrl: preview,
+				MusicUrl:   purl,
+			}}, nil
 		}
 		if d["type"] == "163" {
 			info, err := global.NeteaseMusicSongInfo(d["id"])
@@ -444,10 +515,33 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 			if info.Get("artists.0").Exists() {
 				artistName = info.Get("artists.0.name").Str
 			}
-			json := fmt.Sprintf("{\"app\": \"com.tencent.structmsg\",\"desc\":\"音乐\",\"view\":\"music\",\"prompt\":\"[分享]%s\",\"ver\":\"0.0.0.1\",\"meta\":{ \"music\": { \"desc\": \"%s\", \"jumpUrl\": \"%s\", \"musicUrl\": \"%s\", \"preview\": \"%s\", \"tag\": \"网易云音乐\", \"title\":\"%s\"}}}", name, artistName, jumpUrl, musicUrl, picUrl, name)
-			return message.NewLightApp(json), nil
+			return &CloudMusicElement{MusicElement{
+				Title:      name,
+				Summary:    artistName,
+				Url:        jumpUrl,
+				PictureUrl: picUrl,
+				MusicUrl:   musicUrl,
+			}}, nil
 		}
 		if d["type"] == "custom" {
+			if d["subtype"] == "qq" {
+				return &QQMusicElement{MusicElement{
+					Title:      d["title"],
+					Summary:    d["content"],
+					Url:        d["url"],
+					PictureUrl: d["image"],
+					MusicUrl:   d["purl"],
+				}}, nil
+			}
+			if d["subtype"] == "163" {
+				return &CloudMusicElement{MusicElement{
+					Title:      d["title"],
+					Summary:    d["content"],
+					Url:        d["url"],
+					PictureUrl: d["image"],
+					MusicUrl:   d["purl"],
+				}}, nil
+			}
 			xml := fmt.Sprintf(`<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><msg serviceID="2" templateID="1" action="web" brief="[分享] %s" sourceMsgId="0" url="%s" flag="0" adverSign="0" multiMsgFlag="0"><item layout="2"><audio cover="%s" src="%s"/><title>%s</title><summary>%s</summary></item><source name="音乐" icon="https://i.gtimg.cn/open/app_icon/01/07/98/56/1101079856_100_m.png" url="http://web.p.qq.com/qqmpmobile/aio/app.html?id=1101079856" action="app" a_actionData="com.tencent.qqmusic" i_actionData="tencent1101079856://" appid="1101079856" /></msg>`,
 				d["title"], d["url"], d["image"], d["audio"], d["title"], d["content"])
 			return &message.ServiceElement{
@@ -495,7 +589,7 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 		if maxheight == 0 {
 			maxheight = 1000
 		}
-		img, err := bot.makeImageElem(t, d, group)
+		img, err := bot.makeImageElem(d, group)
 		if err != nil {
 			return nil, errors.New("send cardimage faild")
 		}
@@ -503,6 +597,7 @@ func (bot *CQBot) ToElement(t string, d map[string]string, group bool) (message.
 	default:
 		return nil, errors.New("unsupported cq code: " + t)
 	}
+	return nil, nil
 }
 
 func CQCodeEscapeText(raw string) string {
@@ -534,7 +629,7 @@ func CQCodeUnescapeValue(content string) string {
 }
 
 // 图片 elem 生成器，单独拎出来，用于公用
-func (bot *CQBot) makeImageElem(t string, d map[string]string, group bool) (message.IMessageElement, error) {
+func (bot *CQBot) makeImageElem(d map[string]string, group bool) (message.IMessageElement, error) {
 	f := d["file"]
 	if strings.HasPrefix(f, "http") || strings.HasPrefix(f, "https") {
 		cache := d["cache"]
@@ -582,7 +677,7 @@ func (bot *CQBot) makeImageElem(t string, d map[string]string, group bool) (mess
 		rawPath += ".cqimg"
 	}
 	if !global.PathExists(rawPath) && d["url"] != "" {
-		return bot.ToElement(t, map[string]string{"file": d["url"]}, group)
+		return bot.makeImageElem(map[string]string{"file": d["url"]}, group)
 	}
 	if global.PathExists(rawPath) {
 		b, err := ioutil.ReadFile(rawPath)
@@ -618,7 +713,7 @@ func (bot *CQBot) makeImageElem(t string, d map[string]string, group bool) (mess
 		}
 		if size == 0 {
 			if url != "" {
-				return bot.ToElement(t, map[string]string{"file": url}, group)
+				return bot.makeImageElem(map[string]string{"file": url}, group)
 			}
 			return nil, errors.New("img size is 0")
 		}
@@ -629,7 +724,7 @@ func (bot *CQBot) makeImageElem(t string, d map[string]string, group bool) (mess
 			rsp, err := bot.Client.QueryGroupImage(1, hash, size)
 			if err != nil {
 				if url != "" {
-					return bot.ToElement(t, map[string]string{"file": url}, group)
+					return bot.makeImageElem(map[string]string{"file": url}, group)
 				}
 				return nil, err
 			}
@@ -638,7 +733,7 @@ func (bot *CQBot) makeImageElem(t string, d map[string]string, group bool) (mess
 		rsp, err := bot.Client.QueryFriendImage(1, hash, size)
 		if err != nil {
 			if url != "" {
-				return bot.ToElement(t, map[string]string{"file": url}, group)
+				return bot.makeImageElem(map[string]string{"file": url}, group)
 			}
 			return nil, err
 		}

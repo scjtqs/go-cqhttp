@@ -61,11 +61,13 @@ func NewQQBot(cli *client.QQClient, conf *global.JsonConfig) *CQBot {
 	bot.Client.OnGroupMessageRecalled(bot.groupRecallEvent)
 	bot.Client.OnGroupNotify(bot.groupNotifyEvent)
 	bot.Client.OnFriendMessageRecalled(bot.friendRecallEvent)
+	bot.Client.OnReceivedOfflineFile(bot.offlineFileEvent)
 	bot.Client.OnJoinGroup(bot.joinGroupEvent)
 	bot.Client.OnLeaveGroup(bot.leaveGroupEvent)
 	bot.Client.OnGroupMemberJoined(bot.memberJoinEvent)
 	bot.Client.OnGroupMemberLeaved(bot.memberLeaveEvent)
 	bot.Client.OnGroupMemberPermissionChanged(bot.memberPermissionChangedEvent)
+	bot.Client.OnGroupMemberCardUpdated(bot.memberCardUpdatedEvent)
 	bot.Client.OnNewFriendRequest(bot.friendRequestEvent)
 	bot.Client.OnNewFriendAdded(bot.friendAddedEvent)
 	bot.Client.OnGroupInvited(bot.groupInvitedEvent)
@@ -151,6 +153,48 @@ func (bot *CQBot) SendGroupMessage(groupId int64, m *message.SendingMessage) int
 			bot.Client.SendGroupGift(uint64(groupId), uint64(i.Target), i.GiftId)
 			return 0
 		}
+		if i, ok := elem.(*QQMusicElement); ok {
+			var msgStyle uint32 = 4
+			if i.MusicUrl == "" {
+				msgStyle = 0 // fix vip song
+			}
+			ret, err := bot.Client.SendGroupRichMessage(groupId, 100497308, 1, msgStyle, client.RichClientInfo{
+				Platform:    1,
+				SdkVersion:  "0.0.0",
+				PackageName: "com.tencent.qqmusic",
+				Signature:   "cbd27cd7c861227d013a25b2d10f0799",
+			}, &message.RichMessage{
+				Title:      i.Title,
+				Summary:    i.Summary,
+				Url:        i.Url,
+				PictureUrl: i.PictureUrl,
+				MusicUrl:   i.MusicUrl,
+			})
+			if err != nil {
+				log.Warnf("警告: 群 %v 富文本消息发送失败: %v", groupId, err)
+				return -1
+			}
+			return bot.InsertGroupMessage(ret)
+		}
+		if i, ok := elem.(*CloudMusicElement); ok {
+			ret, err := bot.Client.SendGroupRichMessage(groupId, 100495085, 1, 4, client.RichClientInfo{
+				Platform:    1,
+				SdkVersion:  "0.0.0",
+				PackageName: "com.netease.cloudmusic",
+				Signature:   "da6b069da1e2982db3e386233f68d76d",
+			}, &message.RichMessage{
+				Title:      i.Title,
+				Summary:    i.Summary,
+				Url:        i.Url,
+				PictureUrl: i.PictureUrl,
+				MusicUrl:   i.MusicUrl,
+			})
+			if err != nil {
+				log.Warnf("警告: 群 %v 富文本消息发送失败: %v", groupId, err)
+				return -1
+			}
+			return bot.InsertGroupMessage(ret)
+		}
 		newElem = append(newElem, elem)
 	}
 	m.Elements = newElem
@@ -173,6 +217,40 @@ func (bot *CQBot) SendPrivateMessage(target int64, m *message.SendingMessage) in
 			}
 			newElem = append(newElem, fm)
 			continue
+		}
+		if i, ok := elem.(*QQMusicElement); ok {
+			var msgStyle uint32 = 4
+			if i.MusicUrl == "" {
+				msgStyle = 0 // fix vip song
+			}
+			bot.Client.SendFriendRichMessage(target, 100497308, 1, msgStyle, client.RichClientInfo{
+				Platform:    1,
+				SdkVersion:  "0.0.0",
+				PackageName: "com.tencent.qqmusic",
+				Signature:   "cbd27cd7c861227d013a25b2d10f0799",
+			}, &message.RichMessage{
+				Title:      i.Title,
+				Summary:    i.Summary,
+				Url:        i.Url,
+				PictureUrl: i.PictureUrl,
+				MusicUrl:   i.MusicUrl,
+			})
+			return 0
+		}
+		if i, ok := elem.(*CloudMusicElement); ok {
+			bot.Client.SendFriendRichMessage(target, 100495085, 1, 4, client.RichClientInfo{
+				Platform:    1,
+				SdkVersion:  "0.0.0",
+				PackageName: "com.netease.cloudmusic",
+				Signature:   "da6b069da1e2982db3e386233f68d76d",
+			}, &message.RichMessage{
+				Title:      i.Title,
+				Summary:    i.Summary,
+				Url:        i.Url,
+				PictureUrl: i.PictureUrl,
+				MusicUrl:   i.MusicUrl,
+			})
+			return 0
 		}
 		newElem = append(newElem, elem)
 	}

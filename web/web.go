@@ -6,7 +6,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/Mrs4s/MiraiGo/binary"
 	"github.com/Mrs4s/MiraiGo/client"
 	"github.com/Mrs4s/go-cqhttp/coolq"
 	"github.com/Mrs4s/go-cqhttp/global"
@@ -32,11 +31,13 @@ var WebInput = make(chan string, 1) //长度1，用于阻塞
 
 var Console = make(chan os.Signal, 1)
 
+var JsonConfig *global.JsonConfig
+
 type webServer struct {
 	engine  *gin.Engine
 	bot     *coolq.CQBot
 	Cli     *client.QQClient
-	Conf    *global.JsonConfig
+	Conf    *global.JsonConfig //old config
 	Console *bufio.Reader
 }
 
@@ -112,32 +113,88 @@ func (s *webServer) Run(addr string, cli *client.QQClient) *coolq.CQBot {
 
 func (s *webServer) Dologin() {
 	s.Console = bufio.NewReader(os.Stdin)
+	readLine := func() (str string) {
+		_, _ = fmt.Scanf("%s", &str)
+		return
+	}
 	conf := GetConf()
 	cli := s.Cli
+	cli.AllowSlider = true
 	rsp, err := cli.Login()
 	for {
 		global.Check(err)
+		var text string
 		if !rsp.Success {
 			switch rsp.Error {
+			case client.SliderNeededError:
+				if client.SystemDeviceInfo.Protocol == client.AndroidPhone {
+					log.Warnf("警告: Android Phone 强制要求暂不支持的滑条验证码, 请开启设备锁或切换到Watch协议验证通过后再使用.")
+					log.Infof("按 Enter 继续....")
+					readLine()
+					os.Exit(0)
+				}
+				cli.AllowSlider = false
+				cli.Disconnect()
+				rsp, err = cli.Login()
+				continue
 			case client.NeedCaptcha:
 				_ = ioutil.WriteFile("captcha.jpg", rsp.CaptchaImage, 0644)
 				img, _, _ := image.Decode(bytes.NewReader(rsp.CaptchaImage))
 				fmt.Println(asciiart.New("image", img).Art)
-				log.Warn("请输入验证码 (captcha.jpg)： (http://127.0.0.1/admin/web_write 输入)")
+				log.Warnf("请输入验证码 (captcha.jpg)： (http://%s:%d/admin/web_write 输入)", conf.WebUi.Host, conf.WebUi.WebUiPort)
 				//text, _ := s.Console.ReadString('\n')
 				text := <-WebInput
 				rsp, err = cli.SubmitCaptcha(strings.ReplaceAll(text, "\n", ""), rsp.CaptchaSign)
 				global.DelFile("captcha.jpg")
 				continue
+			case client.SMSNeededError:
+				log.Warnf("账号已开启设备锁, 按下 Enter 向手机 %v 发送短信验证码.", rsp.SMSPhone)
+				readLine()
+				if !cli.RequestSMS() {
+					log.Warnf("发送验证码失败，可能是请求过于频繁.")
+					time.Sleep(time.Second * 5)
+					os.Exit(0)
+				}
+				log.Warn("请输入短信验证码： (Enter 提交)")
+				text = readLine()
+				rsp, err = cli.SubmitSMS(strings.ReplaceAll(strings.ReplaceAll(text, "\n", ""), "\r", ""))
+				continue
+			case client.SMSOrVerifyNeededError:
+				log.Warnf("账号已开启设备锁，请选择验证方式:")
+				log.Warnf("1. 向手机 %v 发送短信验证码", rsp.SMSPhone)
+				log.Warnf("2. 使用手机QQ扫码验证.")
+				log.Warn("请输入(1 - 2): ")
+				log.Warn("直接按 Enter 进入qq扫码验证")
+				text = readLine()
+				if strings.Contains(text, "1") {
+					if !cli.RequestSMS() {
+						log.Warnf("发送验证码失败，可能是请求过于频繁.")
+						time.Sleep(time.Second * 5)
+						os.Exit(0)
+					}
+					log.Warn("请输入短信验证码： (Enter 提交)")
+					text = readLine()
+					rsp, err = cli.SubmitSMS(strings.ReplaceAll(strings.ReplaceAll(text, "\n", ""), "\r", ""))
+					continue
+				}
+				log.Warnf("请前往 -> %v <- 验证并重启Bot.", rsp.VerifyUrl)
+				log.Infof("按 Enter 继续....")
+				readLine()
+				os.Exit(0)
+				return
 			case client.UnsafeDeviceError:
 				log.Warnf("账号已开启设备锁，请前往 -> %v <- 验证并重启Bot.", rsp.VerifyUrl)
-				log.Infof(" (http://127.0.0.1/admin/web_write 确认后继续)....")
+				log.Infof(" (http://%s:%d/admin/web_write 确认后继续)....", conf.WebUi.Host, conf.WebUi.WebUiPort)
 				//_, _ = s.Console.ReadString('\n')
 				text := <-WebInput
 				log.Info(text)
-				continue
+				os.Exit(0)
+				return
 			case client.OtherLoginError, client.UnknownLoginError:
-				log.Fatalf("登录失败: %v", rsp.ErrorMessage)
+				log.Warnf("登录失败: %v", rsp.ErrorMessage)
+				log.Infof("按 Enter 继续....")
+				readLine()
+				os.Exit(0)
 				return
 			}
 		}
@@ -155,7 +212,6 @@ func (s *webServer) Dologin() {
 	if conf.PostMessageFormat != "string" && conf.PostMessageFormat != "array" {
 		log.Warnf("post_message_format 配置错误, 将自动使用 string")
 		coolq.SetMessageFormat("string")
-		return
 	} else {
 		coolq.SetMessageFormat(conf.PostMessageFormat)
 	}
@@ -164,6 +220,7 @@ func (s *webServer) Dologin() {
 	}
 	log.Info("正在加载事件过滤器.")
 	global.BootFilter()
+	global.InitCodec()
 	coolq.IgnoreInvalidCQCode = conf.IgnoreInvalidCQCode
 	coolq.ForceFragmented = conf.ForceFragmented
 	log.Info("资源初始化完成, 开始处理信息.")
@@ -172,6 +229,10 @@ func (s *webServer) Dologin() {
 		if conf.ReLogin.Enabled {
 			var times uint = 1
 			for {
+				if cli.Online {
+					log.Warn("Bot已登录")
+					return
+				}
 				if conf.ReLogin.MaxReloginTimes == 0 {
 				} else if times > conf.ReLogin.MaxReloginTimes {
 					break
@@ -248,6 +309,9 @@ func GetDate() string {
 
 // 获取当前配置文件信息
 func GetConf() *global.JsonConfig {
+	if JsonConfig != nil {
+		return JsonConfig
+	}
 	conf := global.Load("config.json")
 	return conf
 }
@@ -367,10 +431,23 @@ func (s *webServer) LoadTemplate(t *template.Template) (*template.Template, erro
 	return t, nil
 }
 
-func (s *webServer) DoRelogin() {
+func (s *webServer) DoRelogin() { // TODO: 协议层的 ReLogin
+	JsonConfig = nil
 	conf := GetConf()
 	OldConf := s.Conf
 	cli := client.NewClient(conf.Uin, conf.Password)
+	log.Info("开始尝试登录并同步消息...")
+	log.Infof("使用协议: %v", func() string {
+		switch client.SystemDeviceInfo.Protocol {
+		case client.AndroidPad:
+			return "Android Pad"
+		case client.AndroidPhone:
+			return "Android Phone"
+		case client.AndroidWatch:
+			return "Android Watch"
+		}
+		return "未知"
+	}())
 	cli.OnLog(func(c *client.QQClient, e *client.LogEvent) {
 		switch e.Type {
 		case "INFO":
@@ -382,47 +459,8 @@ func (s *webServer) DoRelogin() {
 		}
 	})
 	cli.OnServerUpdated(func(bot *client.QQClient, e *client.ServerUpdatedEvent) {
-		log.Infof("收到服务器地址更新通知, 将在下一次重连时应用. 地址信息已储存到 servers.bin 文件")
-		_ = ioutil.WriteFile("servers.bin", binary.NewWriterF(func(w *binary.Writer) {
-			w.WriteUInt16(func() (c uint16) {
-				for _, s := range e.Servers {
-					if !strings.Contains(s.Server, "com") {
-						c++
-					}
-				}
-				return
-			}())
-			for _, s := range e.Servers {
-				if !strings.Contains(s.Server, "com") {
-					w.WriteString(s.Server)
-					w.WriteUInt16(uint16(s.Port))
-				}
-			}
-		}), 0644)
+		log.Infof("收到服务器地址更新通知, 将在下一次重连时应用. ")
 	})
-	if global.PathExists("servers.bin") {
-		if data, err := ioutil.ReadFile("servers.bin"); err == nil {
-			func() {
-				defer func() {
-					if pan := recover(); pan != nil {
-						log.Error("读取服务器地址时出现错误: %v", pan)
-					}
-				}()
-				r := binary.NewReader(data)
-				var addr []*net.TCPAddr
-				l := r.ReadUInt16()
-				for i := 0; i < int(l); i++ {
-					addr = append(addr, &net.TCPAddr{
-						IP:   net.ParseIP(r.ReadString()),
-						Port: int(r.ReadUInt16()),
-					})
-				}
-				if len(addr) > 0 {
-					cli.SetCustomServer(addr)
-				}
-			}()
-		}
-	}
 	s.Cli = cli
 	s.Dologin()
 	//关闭之前的 server
@@ -434,6 +472,7 @@ func (s *webServer) DoRelogin() {
 	//}
 	//s.UpServer()
 	s.ReloadServer()
+	s.Conf = conf
 }
 
 func (s *webServer) UpServer() {
