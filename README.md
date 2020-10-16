@@ -1,4 +1,4 @@
-# go-cqhttp
+# go-cqhttp with adminwebui
 使用 [mirai](https://github.com/mamoe/mirai) 以及 [MiraiGo](https://github.com/Mrs4s/MiraiGo) 开发的cqhttp golang原生实现, 并在[cqhttp原版](https://github.com/richardchien/coolq-http-api)的基础上做了部分修改和拓展.
 文档暂时可查看 `docs` 目录， 目前还在撰写中.
 
