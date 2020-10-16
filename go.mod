@@ -1,9 +1,9 @@
 module github.com/Mrs4s/go-cqhttp
 
-go 1.14
+go 1.15
 
 require (
-	github.com/Mrs4s/MiraiGo v0.0.0-20201003051902-8a968656c116
+	github.com/Mrs4s/MiraiGo v0.0.0-20201016033322-0922b058ff56
 	github.com/fastly/go-utils v0.0.0-20180712184237-d95a45783239 // indirect
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-playground/validator/v10 v10.4.0 // indirect
@@ -24,6 +24,7 @@ require (
 	github.com/t-tomalak/logrus-easy-formatter v0.0.0-20190827215021-c074f06c5816
 	github.com/tebeka/strftime v0.1.5 // indirect
 	github.com/tidwall/gjson v1.6.1
+	github.com/wdvxdr1123/go-silk v0.0.0-20201007123416-b982fd3d91d6
 	github.com/xujiajun/nutsdb v0.5.0
 	github.com/yinghau76/go-ascii-art v0.0.0-20190517192627-e7f465a30189
 	golang.org/x/net v0.0.0-20200930145003-4acb6c075d10 // indirect
